@@ -11,6 +11,9 @@ type Config struct {
 	// The name of this node. This must be unique in the cluster.
 	Name string
 
+	// Name of the cluster
+	ClusterName string
+
 	// Configuration related to what address to bind to and ports to
 	// listen on. The port is used for both UDP and TCP gossip.
 	// It is assumed other nodes are running on this port, but they
@@ -196,6 +199,7 @@ func DefaultLANConfig() *Config {
 	hostname, _ := os.Hostname()
 	return &Config{
 		Name:                    hostname,
+		ClusterName:      "default",
 		BindAddr:                "0.0.0.0",
 		BindPort:                7946,
 		AdvertiseAddr:           "",
@@ -236,7 +240,7 @@ func DefaultWANConfig() *Config {
 	conf.PushPullInterval = 60 * time.Second
 	conf.ProbeTimeout = 3 * time.Second
 	conf.ProbeInterval = 5 * time.Second
-	conf.GossipNodes = 4 // Gossip less frequently, but to an additional node
+	conf.GossipNodes = 4    // Gossip less frequently, but to an additional node
 	conf.GossipInterval = 500 * time.Millisecond
 	return conf
 }

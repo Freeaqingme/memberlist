@@ -110,6 +110,7 @@ type nackResp struct {
 type suspect struct {
 	Incarnation uint32
 	Node        string
+	ClusterName string
 	From        string // Include who is suspecting
 }
 
@@ -118,6 +119,7 @@ type suspect struct {
 type alive struct {
 	Incarnation uint32
 	Node        string
+	ClusterName string
 	Addr        []byte
 	Port        uint16
 	Meta        []byte
@@ -132,6 +134,7 @@ type alive struct {
 type dead struct {
 	Incarnation uint32
 	Node        string
+	ClusterName string
 	From        string // Include who is suspecting
 }
 
@@ -139,6 +142,7 @@ type dead struct {
 // otherside how many states we are transferring
 type pushPullHeader struct {
 	Nodes        int
+	ClusterName  string
 	UserStateLen int  // Encodes the byte lengh of user state
 	Join         bool // Is this a join request or a anti-entropy run
 }
@@ -528,6 +532,11 @@ func (m *Memberlist) handleSuspect(buf []byte, from net.Addr) {
 		m.logger.Printf("[ERR] memberlist: Failed to decode suspect message: %s %s", err, LogAddress(from))
 		return
 	}
+
+	if !m.isSameCluster(sus.ClusterName) {
+		return
+	}
+
 	m.suspectNode(&sus)
 }
 
@@ -544,6 +553,10 @@ func (m *Memberlist) handleAlive(buf []byte, from net.Addr) {
 		live.Port = uint16(m.config.BindPort)
 	}
 
+	if !m.isSameCluster(live.ClusterName) {
+		return
+	}
+
 	m.aliveNode(&live, nil, false)
 }
 
@@ -553,6 +566,11 @@ func (m *Memberlist) handleDead(buf []byte, from net.Addr) {
 		m.logger.Printf("[ERR] memberlist: Failed to decode dead message: %s %s", err, LogAddress(from))
 		return
 	}
+
+	if !m.isSameCluster(d.ClusterName) {
+		return
+	}
+
 	m.deadNode(&d)
 }
 
@@ -781,7 +799,8 @@ func (m *Memberlist) sendLocalState(conn net.Conn, join bool) error {
 	bufConn := bytes.NewBuffer(nil)
 
 	// Send our node state
-	header := pushPullHeader{Nodes: len(localNodes), UserStateLen: len(userData), Join: join}
+	header := pushPullHeader{Nodes: len(localNodes), UserStateLen: len(userData), Join: join,
+		ClusterName: m.config.ClusterName}
 	hd := codec.MsgpackHandle{}
 	enc := codec.NewEncoder(bufConn, &hd)
 
@@ -934,6 +953,11 @@ func (m *Memberlist) readRemoteState(bufConn io.Reader, dec *codec.Decoder) (boo
 		return false, nil, nil, err
 	}
 
+	if !m.isSameCluster(header.ClusterName) {
+		return false, nil, nil, fmt.Errorf("Cluster names do not match: %s <-> %s",
+			header.ClusterName, m.config.ClusterName)
+	}
+
 	// Allocate space for the transfer
 	remoteNodes := make([]pushNodeState, header.Nodes)
 
@@ -1084,4 +1108,16 @@ func (m *Memberlist) sendPingAndWaitForAck(destAddr net.Addr, ping ping, deadlin
 	}
 
 	return true, nil
+}
+
+
+func (m *Memberlist) isSameCluster(name string) bool {
+	// Check if we are the same cluster
+	if name != m.config.ClusterName {
+		m.logger.Printf("[ERR] memberlist: Cluster names do not match: %s <-> %s",
+			name, m.config.ClusterName)
+		return false
+	}
+
+	return true
 }
